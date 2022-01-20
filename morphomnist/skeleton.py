@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.ndimage import filters
 from skimage import morphology
+from typing import Union
 
 from .morpho import ImageMoments, ImageMorphology
 
@@ -27,9 +28,9 @@ def get_angle(skel, i: int, j: int, r: int) -> float:
         The estimated angle, in radians.
     """
     skel = np.asarray(skel)
-    skel = np.pad(skel, pad_width=r, mode='constant', constant_values=0)
+    skel = np.pad(skel, pad_width=r, mode="constant", constant_values=0)
     mask = np.ones([2 * r + 1, 2 * r + 1])
-    nbs = skel[i:i + 2*r + 1, j:j + 2*r + 1]
+    nbs = skel[i : i + 2 * r + 1, j : j + 2 * r + 1]
     angle = ImageMoments(nbs * mask).angle
     return angle
 
@@ -48,7 +49,7 @@ def num_neighbours(skel) -> np.ndarray:
         Array containing the numbers of neighbours at each skeleton pixel and 0 elsewhere.
     """
     skel = np.asarray(skel, dtype=int)
-    return filters.convolve(skel, _NB_MASK, mode='constant') * skel
+    return filters.convolve(skel, _NB_MASK, mode="constant") * skel
 
 
 def erase(skel, seeds, r: int) -> np.ndarray:
@@ -68,10 +69,10 @@ def erase(skel, seeds, r: int) -> np.ndarray:
     (H, W) numpy.ndarray
         Processed skeleton image, of the same shape as `skel`.
     """
-    erased = np.pad(skel, pad_width=r, mode='constant', constant_values=0)
+    erased = np.pad(skel, pad_width=r, mode="constant", constant_values=0)
     brush = ~morphology.disk(r).astype(bool)
     for i, j in zip(*np.where(seeds)):
-        erased[i:i + 2*r+1, j:j + 2*r+1] &= brush
+        erased[i : i + 2 * r + 1, j : j + 2 * r + 1] &= brush
     return erased[r:-r, r:-r]
 
 
@@ -90,7 +91,12 @@ class LocationSampler(object):
         self.prune_tips = prune_tips
         self.prune_forks = prune_forks
 
-    def sample(self, morph: ImageMorphology, num: int = None) -> np.ndarray:
+    def sample(
+        self,
+        morph: ImageMorphology,
+        num: int = None,
+        deterministic_index: np.ndarray = None,
+    ) -> np.ndarray:
         """Samples locations along the skeleton.
 
         Parameters
@@ -99,6 +105,8 @@ class LocationSampler(object):
             Morphological pipeline computed for the input image.
         num : int, optional
             Number of coordinates to sample (default: one).
+        deterministic_index: int, optional
+            Index of the pixel to sample (default: None).
 
         Returns
         -------
@@ -118,5 +126,10 @@ class LocationSampler(object):
         coords = np.array(np.where(skel)).T
         if coords.shape[0] == 0:
             raise ValueError("Overpruned skeleton")
-        centre_idx = np.random.choice(coords.shape[0], size=num)
+        if deterministic_index is not None:
+            centre_idx = np.mod(deterministic_index, coords.shape[0])
+            centre_idx = centre_idx[:num]
+        else:
+            centre_idx = np.random.choice(coords.shape[0], size=num)
+        # print(coords)
         return coords[centre_idx]

@@ -26,7 +26,7 @@ class Perturbation:
 class Thinning(Perturbation):
     """Thin a digit by a specified proportion of its thickness."""
 
-    def __init__(self, amount: float = .7):
+    def __init__(self, amount: float = 0.7):
         """
         Parameters
         ----------
@@ -37,7 +37,7 @@ class Thinning(Perturbation):
         self.amount = amount
 
     def __call__(self, morph: ImageMorphology) -> np.ndarray:
-        radius = int(self.amount * morph.scale * morph.mean_thickness / 2.)
+        radius = int(self.amount * morph.scale * morph.mean_thickness / 2.0)
         return morphology.erosion(morph.binary_image, morphology.disk(radius))
 
 
@@ -55,7 +55,7 @@ class Thickening(Perturbation):
         self.amount = amount
 
     def __call__(self, morph: ImageMorphology) -> np.ndarray:
-        radius = int(self.amount * morph.scale * morph.mean_thickness / 2.)
+        radius = int(self.amount * morph.scale * morph.mean_thickness / 2.0)
         return morphology.dilation(morph.binary_image, morphology.disk(radius))
 
 
@@ -89,7 +89,9 @@ class Swelling(Deformation):
     :math:`\gamma` is the `strength`.
     """
 
-    def __init__(self, strength: float = 3, radius: float = 7):
+    def __init__(
+        self, strength: float = 3, radius: float = 7, noise: np.ndarray = None
+    ):
         """
         Parameters
         ----------
@@ -100,16 +102,19 @@ class Swelling(Deformation):
         """
         self.strength = strength
         self.radius = radius
-        self.loc_sampler = skeleton.LocationSampler()
+        self.noise = noise
+        self.loc_sampler = skeleton.LocationSampler()  # stochastic
 
     def warp(self, xy: np.ndarray, morph: ImageMorphology) -> np.ndarray:
-        centre = self.loc_sampler.sample(morph)[::-1]
-        radius = (self.radius * np.sqrt(morph.mean_thickness) / 2.) * morph.scale
+        centre = self.loc_sampler.sample(morph, num=1, deterministic_index=self.noise)[
+            ::-1
+        ]
+        radius = (self.radius * np.sqrt(morph.mean_thickness) / 2.0) * morph.scale
 
         offset_xy = xy - centre
         distance = np.hypot(*offset_xy.T)
         weight = (distance / radius) ** (self.strength - 1)
-        weight[distance > radius] = 1.
+        weight[distance > radius] = 1.0
         return centre + weight[:, None] * offset_xy
 
 
@@ -121,9 +126,15 @@ class Fracture(Perturbation):
     """
 
     _ANGLE_WINDOW = 2
-    _FRAC_EXTENSION = .5
+    _FRAC_EXTENSION = 0.5
 
-    def __init__(self, thickness: float = 1.5, prune: float = 2, num_frac: int = 3):
+    def __init__(
+        self,
+        thickness: float = 1.5,
+        prune: float = 2,
+        num_frac: int = 3,
+        noise: np.ndarray = None,
+    ):
         """
         Parameters
         ----------
@@ -137,26 +148,38 @@ class Fracture(Perturbation):
         self.thickness = thickness
         self.prune = prune
         self.num_frac = num_frac
-        self.loc_sampler = skeleton.LocationSampler(prune, prune)
+        self.noise = noise
+        self.loc_sampler = skeleton.LocationSampler(prune, prune)  # stochastic
 
     def __call__(self, morph: ImageMorphology) -> np.ndarray:
         up_thickness = self.thickness * morph.scale
         r = int(np.ceil((up_thickness - 1) / 2))
         brush = ~morphology.disk(r).astype(bool)
-        frac_img = np.pad(morph.binary_image, pad_width=r, mode='constant', constant_values=False)
+        frac_img = np.pad(
+            morph.binary_image, pad_width=r, mode="constant", constant_values=False
+        )
         try:
-            centres = self.loc_sampler.sample(morph, self.num_frac)
+            centres = self.loc_sampler.sample(
+                morph, self.num_frac, deterministic_index=self.noise
+            )
         except ValueError:  # Skeleton vanished with pruning, attempt without
-            centres = skeleton.LocationSampler().sample(morph, self.num_frac)
+            centres = skeleton.LocationSampler().sample(
+                morph, self.num_frac, deterministic_index=self.noise
+            )
         for centre in centres:
             p0, p1 = self._endpoints(morph, centre)
             self._draw_line(frac_img, p0, p1, brush)
         return frac_img[r:-r, r:-r]
 
     def _endpoints(self, morph, centre):
-        angle = skeleton.get_angle(morph.skeleton, *centre, self._ANGLE_WINDOW * morph.scale)
-        length = morph.distance_map[centre[0], centre[1]] + self._FRAC_EXTENSION * morph.scale
-        angle += np.pi / 2.  # Perpendicular to the skeleton
+        angle = skeleton.get_angle(
+            morph.skeleton, *centre, self._ANGLE_WINDOW * morph.scale
+        )
+        length = (
+            morph.distance_map[centre[0], centre[1]]
+            + self._FRAC_EXTENSION * morph.scale
+        )
+        angle += np.pi / 2.0  # Perpendicular to the skeleton
         normal = length * np.array([np.sin(angle), np.cos(angle)])
         p0 = (centre + normal).astype(int)
         p1 = (centre - normal).astype(int)
@@ -170,7 +193,7 @@ class Fracture(Perturbation):
         ii, jj = draw.line(*p0, *p1)
         for i, j in zip(ii, jj):
             try:
-                img[i - h_start:i + h_end, j - w_start:j + w_end] &= brush
+                img[i - h_start : i + h_end, j - w_start : j + w_end] &= brush
             except ValueError:
                 # Rare case: Fracture would leave image outline, because
                 # selected point on skeleton is too close to image outline.
