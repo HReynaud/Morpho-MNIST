@@ -61,7 +61,7 @@ class Thickening(Perturbation):
 
 class Deformation(Perturbation):
     def __call__(self, morph: ImageMorphology) -> np.ndarray:
-        return transform.warp(morph.binary_image, lambda xy: self.warp(xy, morph))
+        return transform.warp(morph.binary_image, lambda xy: self.warp(xy, morph)), self.centre
 
     def warp(self, xy: np.ndarray, morph: ImageMorphology) -> np.ndarray:
         """Transform a regular coordinate grid to the deformed coordinates in input space.
@@ -104,6 +104,7 @@ class Swelling(Deformation):
         self.radius = radius
         self.noise = noise
         self.loc_sampler = skeleton.LocationSampler()  # stochastic
+        self.centre = None
 
     def warp(self, xy: np.ndarray, morph: ImageMorphology) -> np.ndarray:
         centre = self.loc_sampler.sample(morph, num=1, deterministic_index=self.noise)[
@@ -115,6 +116,7 @@ class Swelling(Deformation):
         distance = np.hypot(*offset_xy.T)
         weight = (distance / radius) ** (self.strength - 1)
         weight[distance > radius] = 1.0
+        self.centre = centre
         return centre + weight[:, None] * offset_xy
 
 
@@ -169,7 +171,7 @@ class Fracture(Perturbation):
         for centre in centres:
             p0, p1 = self._endpoints(morph, centre)
             self._draw_line(frac_img, p0, p1, brush)
-        return frac_img[r:-r, r:-r]
+        return frac_img[r:-r, r:-r], centres
 
     def _endpoints(self, morph, centre):
         angle = skeleton.get_angle(
