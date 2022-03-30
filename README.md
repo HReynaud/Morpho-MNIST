@@ -1,5 +1,6 @@
 ```diff
-- This is complete fork of MorphoMNIST with a small edit to retrieve the random location of the swelling and fractures.
+- This is complete fork of MorphoMNIST with a small edit to retrieve 
+- the random location of the swelling and fractures.
 ```
 
 # Morpho-MNIST
